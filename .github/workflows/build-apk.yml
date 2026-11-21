@@ -1,0 +1,54 @@
+
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Generate Android project
+        run: |
+          flutter create \
+            --platforms=android \
+            --org org.openeuicc.manager \
+            --project-name open_euicc_manager \
+            /tmp/flutter_shell
+          cp -R /tmp/flutter_shell/android ./android
+
+      - name: Install Kotlin activity
+        run: |
+          mkdir -p android/app/src/main/kotlin/org/openeuicc/manager/open_euicc_manager
+          sed -i 's/^package org\.openeuicc\.manager$/package org.openeuicc.manager.open_euicc_manager/' native/MainActivity.kt
+          cp native/MainActivity.kt android/app/src/main/kotlin/org/openeuicc/manager/open_euicc_manager/MainActivity.kt
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build APK
+        run: flutter build apk --debug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-euicc-manager-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
