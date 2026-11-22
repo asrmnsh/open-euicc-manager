@@ -2,11 +2,13 @@
 package org.openeuicc.manager
 
 import android.os.Build
+import android.content.pm.PackageManager
 import android.se.omapi.SEService
 import android.se.omapi.Session
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.security.MessageDigest
 import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
@@ -27,11 +29,67 @@ class MainActivity : FlutterActivity() {
             when (call.method) {
                 "discover" -> discoverReaders(result)
                 "testSim1" -> testSim1(result)
+                "getAppCertificate" -> getAppCertificate(result)
                 else -> result.notImplemented()
             }
         }
     }
 
+    // استخراج شهادات توقيع التطبيق
+    private fun getAppCertificate(
+        result: MethodChannel.Result
+    ) {
+        try {
+            val signatures = if (
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+            ) {
+                packageManager.getPackageInfo(
+                    packageName,
+                    PackageManager.GET_SIGNING_CERTIFICATES
+                ).signingInfo.apkContentsSigners
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(
+                    packageName,
+                    PackageManager.GET_SIGNATURES
+                ).signatures
+            }
+
+            val certificates = signatures.map { signature ->
+                val bytes = signature.toByteArray()
+
+                fun fingerprint(algorithm: String): String {
+                    return MessageDigest
+                        .getInstance(algorithm)
+                        .digest(bytes)
+                        .joinToString(":") {
+                            "%02X".format(it.toInt() and 0xFF)
+                        }
+                }
+
+                mapOf(
+                    "SHA1" to fingerprint("SHA-1"),
+                    "SHA256" to fingerprint("SHA-256")
+                )
+            }
+
+            result.success(
+                mapOf(
+                    "packageName" to packageName,
+                    "certificates" to certificates
+                )
+            )
+
+        } catch (e: Exception) {
+            result.error(
+                "CERT_ERROR",
+                e.message ?: "فشل استخراج شهادة التطبيق",
+                null
+            )
+        }
+    }
+
+    // اكتشاف قارئات OMAPI
     private fun discoverReaders(
         result: MethodChannel.Result
     ) {
@@ -95,6 +153,7 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    // اختبار فتح وإغلاق Session على SIM1
     private fun testSim1(
         result: MethodChannel.Result
     ) {
