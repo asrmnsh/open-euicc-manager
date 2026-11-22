@@ -76,6 +76,35 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> testSim1() async {
+    setState(() {
+      loading = true;
+      result = 'جاري اختبار SIM1...';
+    });
+
+    try {
+      final response =
+          await platform.invokeMethod('testSim1');
+
+      setState(() {
+        result = response['message']?.toString()
+            ?? 'لم تصل نتيجة الاختبار';
+      });
+    } on PlatformException catch (e) {
+      setState(() {
+        result = 'خطأ: ${e.message}';
+      });
+    } catch (e) {
+      setState(() {
+        result = 'حدث خطأ: $e';
+      });
+    } finally {
+      setState(() {
+        loading = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -108,6 +137,11 @@ class _HomePageState extends State<HomePage> {
                 loading ? 'جاري الفحص...' : 'افحص الجهاز',
               ),
             ),
+            const SizedBox(height: 12),
+            ElevatedButton(
+              onPressed: loading ? null : testSim1,
+              child: const Text('اختبار شريحة SIM1'),
+            ),
             const SizedBox(height: 24),
             SelectableText(
               result,
@@ -120,3 +154,4 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
+
