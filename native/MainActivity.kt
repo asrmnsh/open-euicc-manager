@@ -3,6 +3,7 @@ package org.openeuicc.manager
 
 import android.os.Build
 import android.se.omapi.SEService
+import android.se.omapi.Session
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -24,155 +25,172 @@ class MainActivity : FlutterActivity() {
         ).setMethodCallHandler { call, result ->
 
             when (call.method) {
-    "discover" -> discoverReaders(result)
-    "testSim1" -> testSim1(result)
-    else -> result.notImplemented()
+                "discover" -> discoverReaders(result)
+                "testSim1" -> testSim1(result)
+                else -> result.notImplemented()
             }
         }
     }
 
-    
-private fun discoverReaders(
-    result: MethodChannel.Result
-) {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
-        result.success(
-            mapOf(
-                "omapiSupported" to false,
-                "readers" to emptyList<String>()
+    private fun discoverReaders(
+        result: MethodChannel.Result
+    ) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            result.success(
+                mapOf(
+                    "omapiSupported" to false,
+                    "readers" to emptyList<String>()
+                )
             )
-        )
-        return
-    }
+            return
+        }
 
-    val executor = Executors.newSingleThreadExecutor()
+        val executor = Executors.newSingleThreadExecutor()
 
-    try {
-        lateinit var service: SEService
+        try {
+            lateinit var service: SEService
 
-        service = SEService(
-            this,
-            executor
-        ) {
-            try {
-                val readers: List<String> =
-                    service.readers.map { reader ->
-                        reader.name
+            service = SEService(
+                this,
+                executor
+            ) {
+                try {
+                    val readers: List<String> =
+                        service.readers.map { reader ->
+                            reader.name
+                        }
+
+                    runOnUiThread {
+                        result.success(
+                            mapOf(
+                                "omapiSupported" to true,
+                                "readers" to readers
+                            )
+                        )
+                        service.shutdown()
+                        executor.shutdown()
                     }
 
-                runOnUiThread {
-                    result.success(
-                        mapOf(
-                            "omapiSupported" to true,
-                            "readers" to readers
+                } catch (e: Exception) {
+                    runOnUiThread {
+                        result.error(
+                            "OMAPI_ERROR",
+                            e.message,
+                            null
                         )
-                    )
-                    executor.shutdown()
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    result.error(
-                        "OMAPI_ERROR",
-                        e.message,
-                        null
-                    )
-                    executor.shutdown()
+                        service.shutdown()
+                        executor.shutdown()
+                    }
                 }
             }
-        }
-    } catch (e: Exception) {
-        executor.shutdown()
-        result.error(
-            "OMAPI_ERROR",
-            e.message,
-            null
-        )
-    }
-}
 
-private fun testSim1(result: MethodChannel.Result) {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
-        result.success(
-            mapOf(
-                "success" to false,
-                "message" to "OMAPI غير مدعوم"
+        } catch (e: Exception) {
+            executor.shutdown()
+
+            result.error(
+                "OMAPI_ERROR",
+                e.message,
+                null
             )
-        )
-        return
+        }
     }
 
-    val executor = Executors.newSingleThreadExecutor()
+    private fun testSim1(
+        result: MethodChannel.Result
+    ) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "message" to "OMAPI غير مدعوم"
+                )
+            )
+            return
+        }
 
-    try {
-        lateinit var service: SEService
+        val executor = Executors.newSingleThreadExecutor()
 
-        service = SEService(this, executor) {
-            try {
-                val reader = service.readers.firstOrNull {
-                    it.name == "SIM1"
-                }
+        try {
+            lateinit var service: SEService
 
-                if (reader == null) {
+            service = SEService(
+                this,
+                executor
+            ) {
+                var session: Session? = null
+
+                try {
+                    val reader = service.readers.firstOrNull {
+                        it.name == "SIM1"
+                    }
+
+                    if (reader == null) {
+                        runOnUiThread {
+                            result.success(
+                                mapOf(
+                                    "success" to false,
+                                    "message" to "لم يتم العثور على SIM1"
+                                )
+                            )
+
+                            service.shutdown()
+                            executor.shutdown()
+                        }
+
+                        return@SEService
+                    }
+
+                    session = reader.openSession()
+
+                    session?.close()
+                    session = null
+
+                    runOnUiThread {
+                        result.success(
+                            mapOf(
+                                "success" to true,
+                                "message" to
+                                    "نجح فتح Session وإغلاقها على SIM1"
+                            )
+                        )
+
+                        service.shutdown()
+                        executor.shutdown()
+                    }
+
+                } catch (e: Exception) {
+                    try {
+                        session?.close()
+                    } catch (_: Exception) {
+                    }
+
                     runOnUiThread {
                         result.success(
                             mapOf(
                                 "success" to false,
-                                "message" to "لم يتم العثور على SIM1"
+                                "message" to (
+                                    e.message ?: "فشل فتح Session"
+                                )
                             )
                         )
+
+                        service.shutdown()
                         executor.shutdown()
                     }
-                    return@SEService
-                }
-
-                val session = reader.openSession()
-                val channel = session.openLogicalChannel(
-                    byteArrayOf(
-                        0xA0.toByte(),
-                        0x00,
-                        0x00,
-                        0x00,
-                        0x01
-                    )
-                )
-
-                val opened = channel != null
-
-                channel?.close()
-                session.close()
-
-                runOnUiThread {
-                    result.success(
-                        mapOf(
-                            "success" to opened,
-                            "message" to if (opened)
-                                "تم فتح القناة بنجاح"
-                            else
-                                "تعذر فتح القناة"
-                        )
-                    )
-                    executor.shutdown()
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    result.success(
-                        mapOf(
-                            "success" to false,
-                            "message" to (e.message ?: "فشل الاتصال")
-                        )
-                    )
-                    executor.shutdown()
                 }
             }
-        }
-    } catch (e: Exception) {
-        executor.shutdown()
-        result.success(
-            mapOf(
-                "success" to false,
-                "message" to (e.message ?: "خطأ في OMAPI")
+
+        } catch (e: Exception) {
+            executor.shutdown()
+
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "message" to (
+                        e.message ?: "خطأ في OMAPI"
+                    )
+                )
             )
-        )
+        }
     }
-}
 }
