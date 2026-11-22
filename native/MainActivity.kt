@@ -36,58 +36,68 @@ class MainActivity : FlutterActivity() {
     }
 
     // استخراج شهادات توقيع التطبيق
-    private fun getAppCertificate(
-        result: MethodChannel.Result
-    ) {
-        try {
-            val signatures = if (
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
-            ) {
-                packageManager.getPackageInfo(
-                    packageName,
-                    PackageManager.GET_SIGNING_CERTIFICATES
-                ).signingInfo.apkContentsSigners
-            } else {
-                @Suppress("DEPRECATION")
-                packageManager.getPackageInfo(
-                    packageName,
-                    PackageManager.GET_SIGNATURES
-                ).signatures
-            }
-
-            val certificates = signatures.map { signature ->
-                val bytes = signature.toByteArray()
-
-                fun fingerprint(algorithm: String): String {
-                    return MessageDigest
-                        .getInstance(algorithm)
-                        .digest(bytes)
-                        .joinToString(":") {
-                            "%02X".format(it.toInt() and 0xFF)
-                        }
-                }
-
-                mapOf(
-                    "SHA1" to fingerprint("SHA-1"),
-                    "SHA256" to fingerprint("SHA-256")
-                )
-            }
-
-            result.success(
-                mapOf(
-                    "packageName" to packageName,
-                    "certificates" to certificates
-                )
+    
+private fun getAppCertificate(
+    result: MethodChannel.Result
+) {
+    try {
+        val signatures = if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+        ) {
+            val info = packageManager.getPackageInfo(
+                packageName,
+                PackageManager.GET_SIGNING_CERTIFICATES
             )
 
-        } catch (e: Exception) {
-            result.error(
-                "CERT_ERROR",
-                e.message ?: "فشل استخراج شهادة التطبيق",
-                null
+            info.signingInfo
+                ?.apkContentsSigners
+                ?: throw Exception("SigningInfo غير متاح")
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(
+                packageName,
+                PackageManager.GET_SIGNATURES
+            ).signatures
+                ?: throw Exception("Signatures غير متاحة")
+        }
+
+        if (signatures.isEmpty()) {
+            throw Exception("لا توجد شهادة توقيع")
+        }
+
+        val certificates = signatures.map { signature ->
+            val bytes = signature.toByteArray()
+
+            fun fingerprint(algorithm: String): String {
+                return MessageDigest
+                    .getInstance(algorithm)
+                    .digest(bytes)
+                    .joinToString(":") {
+                        "%02X".format(it.toInt() and 0xFF)
+                    }
+            }
+
+            mapOf(
+                "SHA1" to fingerprint("SHA-1"),
+                "SHA256" to fingerprint("SHA-256")
             )
         }
+
+        result.success(
+            mapOf(
+                "packageName" to packageName,
+                "certificates" to certificates
+            )
+        )
+
+    } catch (e: Exception) {
+        result.error(
+            "CERT_ERROR",
+            e.message ?: "فشل استخراج شهادة التطبيق",
+            null
+        )
     }
+}
 
     // اكتشاف قارئات OMAPI
     private fun discoverReaders(
