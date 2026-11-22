@@ -53,11 +53,11 @@ class MainActivity : FlutterActivity() {
             ) { service ->
 
                 try {
-                    val readers = if (service.isConnected) {
-                        service.readers.map { it.name }
-                    } else {
-                        emptyList()
-                    }
+                    val readers: List<String> = if (service.isConnected) {
+    service.getReaders().map { reader -> reader.name }
+} else {
+    emptyList()
+}
 
                     runOnUiThread {
                         result.success(
