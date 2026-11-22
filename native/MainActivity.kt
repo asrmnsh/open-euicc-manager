@@ -31,60 +31,61 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun discoverReaders(
-        result: MethodChannel.Result
-    ) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
-            result.success(
-                mapOf(
-                    "omapiSupported" to false,
-                    "readers" to emptyList<String>()
-                )
+    
+private fun discoverReaders(
+    result: MethodChannel.Result
+) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+        result.success(
+            mapOf(
+                "omapiSupported" to false,
+                "readers" to emptyList<String>()
             )
-            return
-        }
+        )
+        return
+    }
 
-        try {
-            val executor = Executors.newSingleThreadExecutor()
+    val executor = Executors.newSingleThreadExecutor()
 
-            SEService(
-                this,
-                executor
-            ) { service ->
+    try {
+        lateinit var service: SEService
 
-                try {
-                    val readers: List<String> = if (service.isConnected) {
-    service.getReaders().map { reader -> reader.name }
-} else {
-    emptyList()
-}
-
-                    runOnUiThread {
-                        result.success(
-                            mapOf(
-                                "omapiSupported" to true,
-                                "readers" to readers
-                            )
-                        )
-                        executor.shutdown()
+        service = SEService(
+            this,
+            executor
+        ) {
+            try {
+                val readers: List<String> =
+                    service.readers.map { reader ->
+                        reader.name
                     }
-                } catch (e: Exception) {
-                    runOnUiThread {
-                        result.error(
-                            "OMAPI_ERROR",
-                            e.message,
-                            null
+
+                runOnUiThread {
+                    result.success(
+                        mapOf(
+                            "omapiSupported" to true,
+                            "readers" to readers
                         )
-                        executor.shutdown()
-                    }
+                    )
+                    executor.shutdown()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    result.error(
+                        "OMAPI_ERROR",
+                        e.message,
+                        null
+                    )
+                    executor.shutdown()
                 }
             }
-        } catch (e: Exception) {
-            result.error(
-                "OMAPI_ERROR",
-                e.message,
-                null
-            )
         }
+    } catch (e: Exception) {
+        executor.shutdown()
+        result.error(
+            "OMAPI_ERROR",
+            e.message,
+            null
+        )
     }
 }
