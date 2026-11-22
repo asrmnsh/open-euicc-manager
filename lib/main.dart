@@ -35,6 +35,10 @@ class _HomePageState extends State<HomePage> {
       MethodChannel('org.openeuicc.manager/bridge');
 
   String result = 'لم يتم فحص الجهاز بعد';
+  String packageName = '';
+  String sha1 = '';
+  String sha256 = '';
+
   bool loading = false;
 
   Future<void> checkDevice() async {
@@ -45,13 +49,13 @@ class _HomePageState extends State<HomePage> {
 
     try {
       final response =
-          await platform.invokeMethod('discover');
+          await platform.invokeMapMethod<String, dynamic>('discover');
 
       final supported =
-          response['omapiSupported'] == true;
+          response?['omapiSupported'] == true;
 
       final readers =
-          (response['readers'] as List?)
+          (response?['readers'] as List?)
                   ?.map((e) => e.toString())
                   .toList() ??
               [];
@@ -84,10 +88,10 @@ class _HomePageState extends State<HomePage> {
 
     try {
       final response =
-          await platform.invokeMethod('testSim1');
+          await platform.invokeMapMethod<String, dynamic>('testSim1');
 
       setState(() {
-        result = response['message']?.toString()
+        result = response?['message']?.toString()
             ?? 'لم تصل نتيجة الاختبار';
       });
     } on PlatformException catch (e) {
@@ -105,13 +109,116 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  // استخراج شهادة توقيع التطبيق
+  Future<void> getAppCertificate() async {
+    setState(() {
+      loading = true;
+      result = 'جاري استخراج شهادة التطبيق...';
+    });
+
+    try {
+      final response =
+          await platform.invokeMapMethod<String, dynamic>(
+        'getAppCertificate',
+      );
+
+      final certificates =
+          response?['certificates'] as List?;
+
+      if (certificates == null || certificates.isEmpty) {
+        throw Exception('لم يتم العثور على شهادة توقيع');
+      }
+
+      final certificate =
+          Map<String, dynamic>.from(certificates.first as Map);
+
+      setState(() {
+        packageName =
+            response?['packageName']?.toString() ?? '';
+
+        sha1 = certificate['SHA1']?.toString() ?? '';
+        sha256 = certificate['SHA256']?.toString() ?? '';
+
+        result = 'تم استخراج شهادة توقيع التطبيق بنجاح';
+      });
+
+    } on PlatformException catch (e) {
+      setState(() {
+        result = 'خطأ: ${e.message}';
+      });
+    } catch (e) {
+      setState(() {
+        result = 'حدث خطأ: $e';
+      });
+    } finally {
+      setState(() {
+        loading = false;
+      });
+    }
+  }
+
+  Future<void> copyValue(String value) async {
+    await Clipboard.setData(
+      ClipboardData(text: value.replaceAll(':', '')),
+    );
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('تم نسخ البصمة'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Widget certificateField(
+    String title,
+    String value,
+  ) {
+    if (value.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 8),
+            SelectableText(
+              value,
+              style: const TextStyle(fontSize: 12),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => copyValue(value),
+                icon: const Icon(Icons.copy),
+                label: const Text('نسخ'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Open eUICC Manager'),
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -122,36 +229,72 @@ class _HomePageState extends State<HomePage> {
               color: Colors.teal,
             ),
             const SizedBox(height: 20),
+
             const Text(
-              'فحص دعم شرائح eUICC',
+              'فحص وإدارة شرائح eUICC',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
               ),
             ),
+
             const SizedBox(height: 24),
+
             ElevatedButton(
               onPressed: loading ? null : checkDevice,
-              child: Text(
-                loading ? 'جاري الفحص...' : 'افحص الجهاز',
-              ),
+              child: const Text('افحص الجهاز'),
             ),
+
             const SizedBox(height: 12),
+
             ElevatedButton(
               onPressed: loading ? null : testSim1,
               child: const Text('اختبار شريحة SIM1'),
             ),
-            const SizedBox(height: 24),
-            SelectableText(
-              result,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 16),
+
+            const SizedBox(height: 12),
+
+            ElevatedButton.icon(
+              onPressed: loading ? null : getAppCertificate,
+              icon: const Icon(Icons.verified_user),
+              label: const Text('استخراج شهادة توقيع التطبيق'),
             ),
+
+            const SizedBox(height: 24),
+
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: SelectableText(
+                  result,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 16),
+                ),
+              ),
+            ),
+
+            if (packageName.isNotEmpty) ...[
+              const SizedBox(height: 16),
+
+              const Text(
+                'بيانات شهادة التطبيق',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              SelectableText('Package: $packageName'),
+
+              certificateField('SHA-1', sha1),
+              certificateField('SHA-256', sha256),
+            ],
           ],
         ),
       ),
     );
   }
 }
-
